@@ -79,17 +79,18 @@ class RoIAlignFunction(Function):
 
         output_shape = (rois.size(0), input.size(1), ctx.output_size[0],
                         ctx.output_size[1])
-        output = input.new_zeros(output_shape)
+        # roi_align_forward_impl lacks implementation for device mps:0; move to cpu
+        output = input.new_zeros(output_shape, device=torch.device('cpu'))
         if ctx.pool_mode == 0:
-            argmax_y = input.new_zeros(output_shape)
-            argmax_x = input.new_zeros(output_shape)
+            argmax_y = input.new_zeros(output_shape, device=torch.device('cpu'))
+            argmax_x = input.new_zeros(output_shape, device=torch.device('cpu'))
         else:
-            argmax_y = input.new_zeros(0)
-            argmax_x = input.new_zeros(0)
+            argmax_y = input.new_zeros(0, device=torch.device('cpu'))
+            argmax_x = input.new_zeros(0, device=torch.device('cpu'))
 
         ext_module.roi_align_forward(
-            input,
-            rois,
+            input.cpu(),
+            rois.cpu(),
             output,
             argmax_y,
             argmax_x,
@@ -101,17 +102,18 @@ class RoIAlignFunction(Function):
             aligned=ctx.aligned)
 
         ctx.save_for_backward(rois, argmax_y, argmax_x)
-        return output
+        return output.to(input.device)
 
     @staticmethod
     @once_differentiable
     def backward(ctx: Any, grad_output: torch.Tensor) -> tuple:
-        rois, argmax_y, argmax_x = ctx.saved_tensors
-        grad_input = grad_output.new_zeros(ctx.input_shape)
+        #  roi_align_backward lacks implementation for device mps:0; move to cpu
+        rois, argmax_y, argmax_x = map(lambda x: x.cpu(), ctx.saved_tensors)
+        grad_input = grad_output.new_zeros(ctx.input_shape, device=torch.device('cpu'))
         # complex head architecture may cause grad_output uncontiguous.
         grad_output = grad_output.contiguous()
         ext_module.roi_align_backward(
-            grad_output,
+            grad_output.cpu(),
             rois,
             argmax_y,
             argmax_x,
@@ -122,7 +124,7 @@ class RoIAlignFunction(Function):
             sampling_ratio=ctx.sampling_ratio,
             pool_mode=ctx.pool_mode,
             aligned=ctx.aligned)
-        return grad_input, None, None, None, None, None, None
+        return grad_input.to(grad_output.device), None, None, None, None, None, None
 
 
 roi_align = RoIAlignFunction.apply
