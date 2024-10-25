@@ -24,8 +24,10 @@ class NMSop(torch.autograd.Function):
             valid_inds = torch.nonzero(
                 valid_mask, as_tuple=False).squeeze(dim=1)
 
+        # ext_module.nms lacks implementation for device mps:0; move to cpu
         inds = ext_module.nms(
-            bboxes, scores, iou_threshold=float(iou_threshold), offset=offset)
+            bboxes.cpu(), scores.cpu(), iou_threshold=float(iou_threshold), offset=offset)
+        inds.to(bboxes.device)
 
         if max_num > 0:
             inds = inds[:max_num]
